@@ -1,0 +1,235 @@
+---
+title: "Potential Outcomes Simulation Homework"
+author: "Jennifer Hill, Ray Lu & Zarni Htet"
+output: pdf_document
+---
+
+## Objective
+
+In this exercise, you will be tasked with simulating an intervention study with a pre-determined average treatment effect. The goal is for you to understand the **potential outcome framework**, and the properties of **completely randomized experiments** through simulation. 
+
+### Problem Statement
+
+The goal is to simulate a data set with a treatment effect of $\tau$ = 5.
+
+The setting for our hypothetical study is Professor Hill's Causal Inference class. After the first attempt at Quiz I, Professor Hill decides to give students an opportunity to take the quiz again. Before the second attempt of the quiz, Professor Hill randomly assigns half the class to attend an extra tutoring session to half of the class. The other half of the class does not receive any additional help. Consider the half of the class that receives tutors as the treated group. The goal is to estimate the effect of the extra tutoring session on average test scores for the retake of Quiz 1.
+
+We are assuming that SUTVA is satisfied.
+
+#### Question 1: Generating potential outcomes; Calculating ATE (all seeing/omniscient)
+
+For this section, you are a god of Statistics.  That is, assume you are omniscient and know the potential outcome of $Y(0)$ and $Y(1)$ for everyone.
+
+(a) Please simulate a dataset consistent with the assumptions below while demonstrating an average treatment effect (ATE) of approximately **5**.
+
+#### Simulation assumptions
+
+The Data Generating Process (DGP) has the following features:                            
+* Population size N is 1000.                                            
+* The pretest (Causal Quiz I score) is independent and identically distributed with a Normal distribution with mean of 65 and standard deviation of 3.                       
+* The potential outcomes for the corresponding to Causal Quiz II score should be linearly related to the pretest quiz score. In particular they should take the form:                                
+
+$$
+Y(0) = \beta_{0} + \beta_{1}X + 0  + \epsilon
+$$
+
+$$
+Y(1) = \beta_{0} + \beta_{1}X + \tau + \epsilon
+$$
+where $\beta_{0}$ is the intercept taking the value of **10**. $\beta_{1}$ is set to **1.1**. $\tau$ is 5. $\epsilon$ should be drawn from a N(0,1) distribution.  Please also set the seed at 1234 before generating these draws.
+
+```{r}
+# Population size
+N = 1000
+# Intercept
+beta0 = 10
+# Slope
+beta1 = 1.1
+# Population average treatment effect
+tau = 5
+
+# Setting seed for consistent draws
+set.seed(1234)
+# Drawing epsilon from N(0,1) distribution
+epsilon = rnorm(1,0,1)
+# Drawing for pretest scores
+X = rnorm(N,65,3)
+
+# Initializing all outcomes for no intervention
+Y0 = rep(NA,N)
+# Simulating no intervention posttest scores from pretest scores
+Y0 = beta0 + beta1*X + 0 + epsilon
+
+# Initializing all outcomes for intervention for all
+Y1 = rep(NA,N)
+# Simulating all intervention posttest scores from pretest scores
+Y1 = beta0 + beta1*X + 5 + epsilon
+
+# This results in three vectors of simulated data, X, Y0, Y1
+```
+
+(b) Write a function to generate the data generating process (DGP) for pretest, Y0, and Y1 with arguments for sample size, the coefficient on the pretest, and the random seed.  Then use this function to simulate a data set with sample size equal to *100*, seed equal to 1234, and the coefficient on the covariate set to 1.1.  The probability of being assigned to treatment should be equal to .5.
+
+```{r}
+# Start function, with inputs N, beta1, and seed
+DGPGod = function(n,beta1,seed){
+  # Setting seed for consistent draws
+  set.seed(seed)
+  # Drawing epsilon from N(0,1) distribution
+  epsilon = rnorm(n,0,1)
+  # Drawing for pretest scores, reset the seed
+  set.seed(seed)
+  X = rnorm(n,65,3)
+  # Drawing for treatment assignment, reset the seed
+  set.seed(seed)
+  z = rbinom(n,1,0.5)
+  
+  # Initializing all outcomes for no intervention
+  Y0 = rep(NA,n)
+  # Simulating no intervention posttest scores from pretest scores
+  Y0 = beta0 + beta1*X + 0 + epsilon
+  
+  # Initializing all outcomes for intervention for all
+  Y1 = rep(NA,N)
+  # Simulating all intervention posttest scores from pretest scores
+  Y1 = beta0 + beta1*X + 5 + epsilon
+
+  df1 = data.frame(X, z, Y0, Y1)
+  
+  return(df1)
+  # Return data frame
+}
+
+data1 = DGPGod(100,1.1,1234)
+data1
+# Use the function
+```
+
+#### Answer the following questions based on the DGP or using your simulated data set.  Remember that you are still all-seeing.
+
+(a) What is your interpretation of tau? 
+
+In a nonsensical world, given omnipotence, if a student receives tutoring, their post test score can be expected to be 5 points higher than if they were not to receive tutoring. Given the assumption of omnipotence, this tau is the population average treatment effect.
+
+(b) How would you interpret the intercept in the DGP for $Y(0)$ and $Y(1)$? 
+
+In a nonsensical world, given omnipotence, an intercept in the DGP of 10 means we can expect a student with pretest score of 0 to score Y(0) = 10 and Y(1) = 15.
+
+(c) Consider: How would you interpret the $\beta_{1}$ coefficient?
+
+In a nonsensical world, given omnipotence, for any change of 1 in student pretest score, we can expect the post test score to increase by beta1 times the pretest score, holding all other variables constant
+
+#### Question 2: Calculating ATE (all seeing/omniscient)
+Answer this question using the simulated dataset from above.
+
+(a) The Sample Average Treatment Effect (SATE) is the average of individual treatment effects in the sample.  Calculate it for your sample.
+
+```{r}
+# Calculating SATE with difference of means
+SATEGod = (mean(subset(data1,data1[,2]==1)[,4])-mean(subset(data1,data1[,2]==0)[,3]))
+SATEGod
+```
+
+#### Question 3: Estimating SATE (not all seeing/researchers'view)
+
+For Questions 3 and 4, you are a **mere** researcher!  Return your god-vision goggles and use only the data available to the researcher (that is, you will not have access to the counterfactual outcomes for each student).  
+
+(a) Using the same simulated dataset used in the previous case where $\tau$ = **5**, please randomly assign students to treatment and control groups (remember, this is something a research would do in practice). The probability of being assigned to treatment should be equal to .5. One way to do this is by using the following command to generate treatment assignment:
+
+```{r,echo=FALSE,eval=TRUE}
+# Randomly assign treatment status to each individual
+N=1000
+z <- rbinom(n=N, 1, p=.5)
+```
+Note that an alternative method is the following.... think about what difference this might make in practice...
+
+```{r,echo=FALSE,eval=TRUE}
+# Randomly assign treatment status to each individual
+n=1000
+ind <- rep(c(0,1),each=n/2) #Indicator for treatment and control 
+z <- sample(ind, n, replace = FALSE)
+```
+
+Next, create the observed data set which must include pretest scores, treatment assignment and observed Y. 
+```{r}
+# Start function, with inputs N, beta1, and seed
+DGP = function(n,beta1,seed){
+  # Setting seed for consistent draws
+  set.seed(seed)
+  # Drawing epsilon from N(0,1) distribution
+  epsilon = rnorm(n,0,1)
+  # Drawing for pretest scores, reset the seed
+  set.seed(seed)
+  X = rnorm(n,65,3)
+  # Drawing for treatment assignment, reset the seed
+  set.seed(seed)
+  z = rbinom(n,1,0.5)
+  # Make intermediate data frame to subset in the next step
+  Y = beta0 + beta1 * X + 5*z + epsilon
+
+
+  df2 = data.frame(X, z, Y)
+  
+  return(df2)
+  # Return data frame
+}
+
+data2 = DGP(1000,1.1,1234)
+data2
+# Use the function
+
+```
+
+(b)  Estimate SATE using a difference in mean outcomes.
+```{r}
+# Calculating SATE with difference of means
+SATE = (mean(subset(data2,data2[,2]==1)[,3])-mean(subset(data2,data2[,2]==0)[,3]))
+SATE
+```
+
+(c)  Is this estimate close to the true SATE?  Divide the difference between SATE and estimated SATE by the standard deviation of the observed outcome, $Y$ to express this 
+conditional bias in standard deviation units. This helps you understand the practical significance of this difference.
+```{r}
+condbias = (SATE-SATEGod)/sd(data2[,3])
+condbias
+```
+
+(d) Consider: Why is $\hat{SATE}$ different from SATE and $\tau$ ?
+
+Since we are no longer god, we cannot control the even spread of treament assignments nor see the counterfactuals to get a perfectly true SATE.
+
+#### Question 4: Use Linear Regression to estimate the treatment effect 
+
+(a) Now we will use linear regression to estimate SATE for the observed data set created by Question 2. With this set up, we will begin to better understand some fundamental assumptions crucial for the later R homework assignments.
+```{r}
+reg1 = lm(Y~X+z,data2)
+summary(reg1)
+```
+
+(b) Consider: What is gained by using linear regression to estimate ATE instead of the mean difference estimation from above?
+
+The standard error for estimate ATE is smaller.
+
+**Challenge Question**: Treatment Effect Heterogenity
+
+(a) Based on the following function: Simulate the following "response surfaces" (relationship betwee the mean of each potential outcome and the covariate(s)"), $\text{E}[Y(0) \mid X]$ and $\text{E}[Y(1) \mid X]$.  Plot them on the same plot (that is make a plot with $X$ on the x-axis and $Y(0)$/$Y(1)$ on the y-axis.  Also simulate Y(0) and Y(1) (that is, the expected values plus "noise").
+
+Note: $X$ is the same pretest score used before.
+
+\begin{eqnarray*}
+\text{E}[Y(0) \mid X] &=& \beta^0_{0} + \beta^0_{1}X \\
+Y(0) &=& \text{E}[Y(0) \mid X]  + \epsilon^0 \\
+Y(0) &=& \beta^0_{0} + \beta^0_{1}X + \epsilon^0\\
+\text{E}[Y(1) \mid X] &=& \beta^1_{0} + \beta^1_{1}X \\
+Y(1) &=& \text{E}[Y(1) \mid X]  + \epsilon^1 \\
+Y(1) &=& \beta^1_{0} + \beta^1_{1}X  + \epsilon^1 \\
+\end{eqnarray*}
+
+where $\beta^0_{0}$ is set to **35**, $\beta^0_{1}$ is set to .6, $\beta^1_{0}$ is set to **15**, $\beta^1_{1}$ is set to 1. First generate a vector of predicted $Y(0)$ and $Y(1)$ (that is $\text{E}[Y(1) \mid X]$.  Then generate $Y(0)$ and $Y(1)$ with noise added as $\epsilon^0$ or $\epsilon^1$ from a distribution of N(0,1). Again, please also set seed at 1234. 
+
+(b) Comment on your findings. In particular, note that there is no longer a tau included in the DGP.  Is there still a SATE?  Can we calculate SATE? (Remember I have to be omniscient to do this!) What is it?  Consider: How do we interpret the average treatment effect in this setting?
+
+(c) Is the treatment effect the same for all students?  If not, is there a pattern to the way it varies?  Consider: Why do we care about treatment effect heterogeneity?
+
+(d) Now generate a similar plot from the initial DGP in Question 1 to reinforce the differences between a setting with constant treatment effect and a setting with heterogeneous treatment effects.
+

@@ -1,0 +1,221 @@
+---
+title: "Potential Outcomes Simulation Homework"
+author: "Jennifer Hill, Ray Lu & Zarni Htet"
+output: pdf_document
+---
+
+## Objective
+
+In this exercise, you will be tasked with simulating an intervention study with a pre-determined average treatment effect. The goal is for you to understand the **potential outcome framework**, and the properties of **completely randomized experiments** through simulation. 
+
+### Problem Statement
+
+The goal is to simulate a data set with a treatment effect of $\tau$ = 5.
+
+The setting for our hypothetical study is Professor Hill's Causal Inference class. After the first attempt at Quiz I, Professor Hill decides to give students an opportunity to take the quiz again. Before the second attempt of the quiz, Professor Hill randomly assigns half the class to attend an extra tutoring session to half of the class. The other half of the class does not receive any additional help. Consider the half of the class that receives tutors as the treated group. The goal is to estimate the effect of the extra tutoring session on average test scores for the retake of Quiz 1.
+
+We are assuming that SUTVA is satisfied.
+
+#### Question 1: Generating potential outcomes; Calculating ATE (all seeing/omniscient)
+
+For this section, you are a god of Statistics.  That is, assume you are omniscient and know the potential outcome of $Y(0)$ and $Y(1)$ for everyone.
+
+(a) Please simulate a dataset consistent with the assumptions below while demonstrating an average treatment effect (ATE) of approximately **5**.
+
+#### Simulation assumptions
+
+The Data Generating Process (DGP) has the following features:                            
+* Population size N is 1000.                                            
+* The pretest (Causal Quiz I score) is independent and identically distributed with a Normal distribution with mean of 65 and standard deviation of 3.                       
+* The potential outcomes for the corresponding to Causal Quiz II score should be linearly related to the pretest quiz score. In particular they should take the form:                                
+
+$$
+Y(0) = \beta_{0} + \beta_{1}X + 0  + \epsilon
+$$
+
+$$
+Y(1) = \beta_{0} + \beta_{1}X + \tau + \epsilon
+$$
+where $\beta_{0}$ is the intercept taking the value of **10**. $\beta_{1}$ is set to **1.1**. $\tau$ is 5. $\epsilon$ should be drawn from a N(0,1) distribution.  Please also set the seed at 1234 before generating these draws.
+
+```{r,echo=FALSE,eval=TRUE}
+### Answer
+set.seed(1234)
+#Create pre-treatment test scores for everyone
+pretest <- rnorm(n = 1000, mean = 65, sd = 3)
+tau = 5
+#Create potential outcome where tau = 5
+y0 <- 10 + 1.1 * pretest +       rnorm(n = 100, mean = 0, sd = 1)
+y1 <- 10 + 1.1 * pretest + tau + rnorm(n = 100, mean = 0, sd = 1)
+dat.full.tau.5<-data.frame(pretest=pretest,y0=y0,y1=y1)
+```
+
+(b) Write a function to generate the data generating process (DGP) for pretest, Y0, and Y1 with arguments for sample size, the coefficient on the pretest, and the random seed.  Then use this function to simulate a data set with sample size equal to *100*, seed equal to 1234, and the coefficient on the covariate set to 1.1.  The probability of being assigned to treatment should be equal to .5.
+
+```{r}
+dgp1.fun <- function(N,coef,seed){
+  set.seed(seed)
+  #Create pre-treatment test scores for everyone
+  pretest <- rnorm(n=N, mean = 65, sd = 3)
+  #Create potential outcome where tau = 5
+  y0 <- 10 + coef * pretest + 0 + rnorm(n = N, mean = 0, sd = 1)
+  y1 <- 10 + coef * pretest + 5 + rnorm(n = N, mean = 0, sd = 1)
+  dat<-data.frame(pretest=pretest,y0=y0,y1=y1)
+return(dat)
+}
+```
+
+```{r}
+#Simulate the dataset
+N=100
+sim.data <- dgp1.fun(N,1.1,1234)
+```
+
+#### Answer the following questions based on the DGP or using your simulated data set.  Remember that you are still all-seeing.
+
+(a) What is your interpretation of tau? 
+
+[](## Answer: In this DGP tau here can be interpreted as the population average treatment effect (for an infinite population).)
+
+(b) How would you interpret the intercept in the DGP for $Y(0)$ and $Y(1)$? 
+[](## Answer: The intercept $\beta_0$ is the mean outcome expected for participants who receive no treatment and have a pretest score of zero. Not very useful!)
+
+(c) Consider: How would you interpret the $\beta_{1}$ coefficient?
+
+[](## Answer: If we compare two groups of people, and one group had a pretest score that was 1 point higher than the other, we would expect that group to have a mean posttest score that was 1.1 points higher on average.)
+
+#### Question 2: Calculating ATE (all seeing/omniscient)
+Answer this question using the simulated dataset from above.
+
+(a) The Sample Average Treatment Effect (SATE) is the average of individual treatment effects in the sample.  Calculate it for your sample.
+
+```{r}
+### Answer
+## Calculate SATE
+SATE<-mean(dat.full.tau.5$y1-dat.full.tau.5$y0)
+SATE
+```
+
+#### Question 3: Estimating SATE (not all seeing/researchers'view)
+
+For Questions 3 and 4, you are a **mere** researcher!  Return your god-vision goggles and use only the data available to the researcher (that is, you will not have access to the counterfactual outcomes for each student).  
+
+(a) Using the same simulated dataset used in the previous case where $\tau$ = **5**, please randomly assign students to treatment and control groups (remember, this is something a research would do in practice). The probability of being assigned to treatment should be equal to .5. One way to do this is by using the following command to generate treatment assignment:
+
+```{r,echo=FALSE,eval=TRUE}
+# Randomly assign treatment status to each individual
+z <- rbinom(n=N, 1, p=.5)
+```
+Note that an alternative method is the following.... think about what difference this might make in practice...
+
+```{r,echo=FALSE,eval=TRUE}
+# Randomly assign treatment status to each individual
+n=1000
+ind <- rep(c(0,1),each=n/2) #Indicator for treatment and control 
+z <- sample(ind, n, replace = FALSE)
+```
+
+Next, create the observed data set which must include pretest scores, treatment assignment and observed Y. 
+
+```{r, echo=FALSE,eval=TRUE}
+### Answer
+y<-ifelse(z==1,dat.full.tau.5$y1,dat.full.tau.5$y0)
+#y <- z*y1 + (1-z)*y0
+dat.obs.tau.5 <- data.frame(pretest=dat.full.tau.5$pretest,z=z,y=y)
+
+```
+
+(b)  Estimate SATE using a difference in mean outcomes.
+
+```{r}
+# Estimate ATE
+est.SATE <- mean(y[z==1]) - mean(y[z==0])
+est.SATE 
+```
+
+(c)  Is this estimate close to the true SATE?  Divide the difference between SATE and estimated SATE by the standard deviation of the observed outcome, $Y$ to express this 
+conditional bias in standard deviation units. This helps you understand the practical significance of this difference.
+
+```{r}
+std.est = est.ATE/sd(y)
+bias <- SATE/sd(y) - std.est
+print(bias)
+```
+
+(d) Consider: Why is $\hat{SATE}$ different from SATE and $\tau$ ?
+
+[](## Answer: The estimate is different from the estimand because we don't have full information.  We are using half
+the data we would need to calculate the true estimand.)
+
+#### Question 3: Use Linear Regression to estimate the treatment effect 
+
+(a) Now we will use linear regression to estimate SATE for the observed data set created by Question 2. With this set up, we will begin to better understand some fundamental assumptions crucial for the later R homework assignments.
+
+```{r,echo=FALSE,eval=TRUE}
+#Running lm model
+print(summary(lm(formula = y ~ pretest + z, data =dat.obs.tau.5)))
+```
+
+(b) Consider: What is gained by using linear regression to estimate ATE instead of the mean difference estimation from above?
+
+[](## Answer: Linear regression can yield a more efficient estimate (i.e. one with a smaller standard error) when the pretreatment variables included are predictive of the outcome.)
+
+**Challenge Question**: Treatment Effect Heterogenity
+
+(a) Based on the following function: Simulate the following "response surfaces" (relationship betwee the mean of each potential outcome and the covariate(s)"), $\text{E}[Y(0) \mid X]$ and $\text{E}[Y(1) \mid X]$.  Plot them on the same plot (that is make a plot with $X$ on the x-axis and $Y(0)$/$Y(1)$ on the y-axis.  Also simulate Y(0) and Y(1) (that is, the expected values plus "noise").
+
+Note: $X$ is the same pretest score used before.
+
+\begin{eqnarray*}
+\text{E}[Y(0) \mid X] &=& \beta^0_{0} + \beta^0_{1}X \\
+Y(0) &=& \text{E}[Y(0) \mid X]  + \epsilon^0 \\
+Y(0) &=& \beta^0_{0} + \beta^0_{1}X + \epsilon^0\\
+\text{E}[Y(1) \mid X] &=& \beta^1_{0} + \beta^1_{1}X \\
+Y(1) &=& \text{E}[Y(1) \mid X]  + \epsilon^1 \\
+Y(1) &=& \beta^1_{0} + \beta^1_{1}X  + \epsilon^1 \\
+\end{eqnarray*}
+
+where $\beta^0_{0}$ is set to **35**, $\beta^0_{1}$ is set to .6, $\beta^1_{0}$ is set to **15**, $\beta^1_{1}$ is set to 1. First generate a vector of predicted $Y(0)$ and $Y(1)$ (that is $\text{E}[Y(1) \mid X]$.  Then generate $Y(0)$ and $Y(1)$ with noise added as $\epsilon^0$ or $\epsilon^1$ from a distribution of N(0,1). Again, please also set seed at 1234. 
+
+```{r}
+set.seed(1234)
+### Answer
+# This answer generates each potential outcome in two steps
+# which is sometimes helpful.
+#Create potential outcome where tau = 5
+y0_hat <- 35+.6*pretest+0
+y0 <- y0_hat+rnorm(100,1)
+y1_hat <- 15 + 1*pretest
+y1 <- y1_hat+rnorm(100,0,1)
+# now the plot
+plot(x=pretest,y=y0_hat,col="blue",xlab="Pretest",ylab="Response",ylim=c(67,90),main="Treatment Heteregenity")
+points(x=pretest,y=y1_hat,col="red",type="p")
+legend("topleft",legend=c("y(0)","y(1)"), col =c("blue","red"),lty=3, cex = 0.8)
+```
+
+(b) Comment on your findings. In particular, note that there is no longer a tau included in the DGP.  Is there still a SATE?  Can we calculate SATE? (Remember I have to be omniscient to do this!) What is it?  Consider: How do we interpret the average treatment effect in this setting?
+
+[](## Answer: SATE still exists but I would need to look at the difference in average Y1 and average Y0 specifically for my sample, which I can only do if I am omniscient.)
+
+```{r}
+# sate could be calculated simply as 
+mean(y1)- mean(y0)
+# note that this is equivalent to mean(y1-y0)
+```
+
+(c) Is the treatment effect the same for all students?  If not, is there a pattern to the way it varies?  Consider: Why do we care about treatment effect heterogeneity?
+
+[](## Consider: Does it vary by observed covariates? Why might this be useful to know?)
+
+(d) Now generate a similar plot from the initial DGP in Question 1 to reinforce the differences between a setting with constant treatment effect and a setting with heterogeneous treatment effects.
+
+```{r}
+set.seed(1234)
+### Answer
+y0_tau.5 <- 10 + 1.1 * pretest+0+rnorm(n = 100,mean = 0,sd = 0.1)
+y1_tau.5 <- 10 + 1.1 * pretest+5+rnorm(n = 100,mean = 0,sd = 0.1)
+plot(pretest,y0_tau.5,col="blue",xlab="Pretest",ylab="Response",ylim=c(65,100),main="Constant Treatment Effect")
+points(pretest,y1_tau.5,col="red")
+legend("topleft",legend=c("y(0)","y(1)"), col =c("blue","red"),lty=3, cex = 0.8)
+```
+

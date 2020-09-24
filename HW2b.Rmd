@@ -1,0 +1,297 @@
+---
+title: "Assn 2b: Randomized Experiment Simulation Homework"
+author: "Kenny Mai"
+output: pdf_document
+---
+# Introduction 
+
+Randomized experiments are called the “gold standard” due to their ability to unbiasedly answer causal questions.  This is achieved by creating two (or more) groups that are identical to each other on average, in terms of the distribution of all (pre-treatment) variables. So, if each group receives a different treatment and the groups have different outcomes, we can safely attribute these differences due only to the systematic difference between groups: the treatment.
+
+In a randomized experiment, units are assigned to treatments using a known probabilistic rule. Each unit has nonzero probability of being allocated each treatment group. In class, we discussed two major types of randomized experiments that differ based on different assignment rules: **completely randomized assignment** and **randomized block assignment**.
+
+## Question 1
+
+Recall that in Assignment 2a we created a simulated dataset that could have manifested as a result of a completely randomized experiment. In that assignment, we asked about the difference between estimating the Sample Average Treatment Effect (SATE) by using the difference in means versus using linear regression with pretest score as a covariate.  However we only looked at one realized dataset so couldn't make more general comments about bias and efficiency of these estimators.  In this exercise, we will further explore these properties of these two different approaches to estimating our ATEs through simulation. For this question you will need to use the function dgp1.fun from assignment 2a.  
+```{r}
+# Loading needed libraries
+library(tidyverse)
+```
+
+```{r}
+dgp1.fun <- function(N,coef,seed){
+  set.seed(seed)
+  #Create pre-treatment test scores for everyone
+  pretest <- rnorm(n=N, mean = 65, sd = 3)
+  #Create potential outcome where tau = 5
+  y0 <- 10 + coef * pretest + 0 + rnorm(n = N, mean = 0, sd = 1)
+  y1 <- 10 + coef * pretest + 5 + rnorm(n = N, mean = 0, sd = 1)
+  dat<-data.frame(pretest=pretest,y0=y0,y1=y1)
+return(dat)
+}
+```
+
+(a) Start by drawing a sample of size 100 using this function, again setting the coefficient on the pretest to be 1.1 and the seed to be 1234.
+```{r}
+# Draw a sample
+samp1 = dgp1.fun(100,1.1,1234)
+samp1
+```
+
+(b) We will now investigate the properties of two estimators of the SATE.
+
+* difference in means
+* linear regression estimate of the treatment effect using the pretest score as a covariate
+
+For now we will only consider the variability in estimates that would manifest as a result of the randomness in who is assigned to receive the treatment (this is sometimes referred to as "randomization based inference").  Since we are in Statistics God mode we can see how the observed outcomes and estimates would change across a distribution of possible treatment assignments.  We simulate this by repeatedly drawing a new vector of treatment assignments and then for each new dataset calculating estimates using our two estimators above.  We will use these estimates to create a "randomization distribution" (similar to a sampling distribution) for these two different estimators for the SATE. Obtain 10,000 draws from this distribution. [Hint: Note that the only thing that will be different in each new dataset is the treatment and observed outcome; the covariate values and potential outcomes will remain the same!]
+```{r}
+# Define sample size
+n = 100
+# Define number of draws
+N = 10000
+# Initialize vector for difference in means
+dif.means = rep(NA,N)
+# Initialize vector ofr linear regression estimate of treatment effect
+lin.reg = rep(NA,N)
+
+# Begin look for N iterations
+for (i in 1:N) {
+  # Assign treatment
+  treatment=rbinom(n,1,0.5)
+  # Turn off God-mode; only one value for y depending on treatment assignment
+  y<-ifelse(treatment==1, samp1$y1, samp1$y0)
+  # Create new data frame for non-God-mode
+  dat1 <- data.frame(pretest=samp1$pretest,treatment=treatment, y=y)
+  # Calculate difference in means, place it into results vector dif.means
+  dif.means[i] = mean(dat1$y[treatment==1]) - mean(dat1$y[treatment==0])
+  # Calculate coefficient for treatment through linear regression, place into lin.reg
+  lin.reg[i] = summary(lm(y ~ pretest + treatment, dat1))$coefficient[3]
+}
+# Quick sanity check
+head(dif.means)
+head(lin.reg)
+# Create data from to store them in
+df1 = data.frame(difmeans=dif.means, linreg=lin.reg)
+```
+
+(b) Plot the (Monte Carlo estimate of the) randomization distribution for each of the two estimators: difference in means and regression.  Either overlay the plots (with different colors for each) or make sure the xlim on both plots is the same.  Also add vertical lines (using different colors) for the SATE and the mean of the randomizaton distribution.
+```{r}
+# Using tidyverse and ggplot to graph the difference in means and linear regression draws
+# Pivot the dataframe to stack all values in one column
+df1 %>% pivot_longer(1:2) %>% 
+  # Call ggplot and color by name
+  ggplot(aes(value,color=name)) + 
+    # Graph density plots of both dif.means and lin.reg
+    geom_density() +
+    geom_vline(xintercept = mean(df1$difmeans),color="red",linetype="dashed") +
+    geom_vline(xintercept = mean(df1$linreg),color="light blue")
+```
+
+(c) Calculate the bias and efficiency of each of these two methods and compare them.
+```{r}
+# Calculate SATE from God-mode
+sate1 = mean(samp1$y1 - samp1$y0)
+# Bias of difference in means
+mean(dif.means)-sate1
+# Bias in linear regression
+mean(lin.reg)-sate1
+# Efficiency of difference in means
+var(dif.means)
+# Efficiency of linear regression
+var(lin.reg)
+```
+Comparing the bias of the difference in means and linear regression, we can see that both are identical and approximate to zero, and this makes them unbiased estimators However, comparing efficiency, we can see that using linear regression is more efficient. This can be visually seen in the graph above, as difference in means has much more variance than linear regression.
+
+(d) Re-run the simulation with a small coefficient (even 0) for the pretest covariate. Does the small coefficient lead to a different bias and efficiency estimate compared to when the coefficient for pretest was at **1.1** from before?
+```{r}
+# Draw new sample, with pretest covariate 0.1 instead of 1.1
+samp2 = dgp1.fun(100,0.1,1234)
+# Define sample size
+n = 100
+# Define number of draws
+N = 10000
+# Initialize vector for difference in means
+dif.means = rep(NA,N)
+# Initialize vector ofr linear regression estimate of treatment effect
+lin.reg = rep(NA,N)
+
+# Begin look for N iterations
+for (i in 1:N) {
+  # Assign treatment
+  treatment=rbinom(n,1,0.5)
+  # Turn off God-mode; only one value for y depending on treatment assignment
+  y<-ifelse(treatment==1, samp2$y1, samp2$y0)
+  # Create new data frame for non-God-mode
+  dat1 <- data.frame(pretest=samp2$pretest,treatment=treatment, y=y)
+  # Calculate difference in means, place it into results vector dif.means
+  dif.means[i] = mean(dat1$y[treatment==1]) - mean(dat1$y[treatment==0])
+  # Calculate coefficient for treatment through linear regression, place into lin.reg
+  lin.reg[i] = summary(lm(y ~ pretest + treatment, dat1))$coefficient[3]
+}
+# Quick sanity check
+head(dif.means)
+head(lin.reg)
+
+# Calculate SATE from God-mode
+sate2 = mean(samp2$y1 - samp2$y0)
+# Bias of difference in means
+mean(dif.means)-sate2
+# Bias in linear regression
+mean(lin.reg)-sate2
+# Efficiency of difference in means
+var(dif.means)
+# Efficiency of linear regression
+var(lin.reg)
+```
+With a resampled draw with a coefficient of 0.1 instead of 1.1, the bias of the estimators remain close to zero, still indicating that they are unbiased estimators. However, the efficiency of the difference in means method is now much closer, even indistinguishable than that of the linear regression. As the coefficient for the covariate decreases, the the difference in means estimator becomes more efficient.
+
+## Question 2
+
+In a randomized block design, randomization occurs separately within blocks. In many situations, the ratio of treatment to control observations is different across blocks. In addition, the treatment effect may vary across sites.  For this problem, you will simulate data sets for a randomized block design that includes a binary indicator for female as a blocking variable.  You will then estimate the ATE with two estimators: one that accounts for the blocking structure and one that does not.  You will compare the bias and efficiency of these estimators.  We will walk you through this in steps.
+
+(a) First simulate the blocking variable and potential outcomes for 100 observations.  In particular:  
+
+* Set the seed to by 1234
+* Generate female as blocking variable (Female vs. Other Ratio (30:70)
+* Generate Y(0) and Y(1) with the following features:
+ -- the intercept is 70 
+ -- the residual standard deviation is 1.  
+ -- treatment effect varies by block: observations with female=1 have treatment effect of 7 and those with female=0 have a treatment effect of 3.
+[Hint: Note that we are assuming that being female predicts treatment effect but does not predict the probability of being treated.]
+
+```{r}
+# Set seed
+set.seed(1234)
+# Generate female as blocking variable
+female = rbinom(100,1,3/7)
+# Generate y0 and y1
+y0 = 70 + rnorm(100,0,1)
+dftemp = data.frame(female=female,y0=y0)
+dftemp = dftemp %>% mutate(y1 = if_else(female==1, 70 + 7, 70 + 3)) 
+dftemp$y1 = dftemp$y1 + rnorm(100,0,1)
+dat2 = dftemp
+# Combine into a data frame
+# Sanity check
+dat2
+```
+
+(b) Calculate the overall SATE and the SATE for each block
+```{r}
+# Calculate overall SATE
+mean(dat2$y1-dat2$y0)
+# Calculate female SATE
+mean(dat2$y1[dat2$female==1]-dat2$y0[dat2$female==1])
+# Calculate male SATE
+mean(dat2$y1[dat2$female==0]-dat2$y0[dat2$female==0])
+```
+
+Now create a function for assigning the treatment  In particular:
+* Within each block create different assignment probabilities:
+
+$$  
+\text{Pr}(Z=1 \mid \text{female}=0) = .6 \\
+\text{Pr}(Z=1 \mid \text{female}=1) = .4 
+$$
+
+```{r}
+# Start function
+dgp2.fun = function(){
+  df = dat2
+  # Import female column from data
+  # Assign treatment
+  df[df$female == 1, "treatment"] = rbinom(nrow(df[df$female==1,]), 1, 0.4)
+  df[df$female == 0, "treatment"] = rbinom(nrow(df[df$female==0,]), 1, 0.6)
+  # Combine into data frame
+  # Use mutate from tidyverse to create y's
+  df = df %>% mutate(y = if_else(df$treatment==1, y1, y0))
+  result = df %>% select(-c(y1,y0))
+  
+  return(result)
+}
+```
+
+Generate the treatment and create a vector for the observed outcomes implied by that treatment. 
+```{r}
+# Draw data
+with.treat = dgp2.fun()
+# Quick sanity check
+with.treat %>% group_by(female) %>% count(treatment)
+with.treat
+```
+```{r}
+# Create a single vector with all outcomes for treatment == 1
+obs.outcome = with.treat$y[with.treat$treatment==1]
+obs.outcome
+```
+
+We will use this to create a randomization distribution for two different estimators for the SATE. Obtain 10,000 draws from that distribution.
+
+```{r}
+# Define iterations
+ITER = 10000
+# Initalize results vectors
+difmeansresults = rep(NA,ITER)
+linregresults = rep(NA,ITER)
+# Begin loop for 10000 draws
+for (i in 1:ITER) {
+  loopdata = dgp2.fun()
+  difmeansresults[i] = mean(loopdata$y[loopdata$treatment==1])-mean(loopdata$y[loopdata$treatment==0])
+  linregresults[i] = summary(lm(y~female+treatment,loopdata))$coefficients[3]
+}
+```
+
+(c) Plot the (Monte Carlo estimate of the) randomization distribution for each of the two estimators: difference in means and regression.  (Note: Similar to Problem 1, the difference in means estimator will ignore blocks and the regression estimator will adjust for the blocks.) Either overlay the two plots (with different colors for each) or make sure the xlim on both plots is the same.
+```{r}
+# Combine our results into a data frame
+df2 = data.frame(difmeans=difmeansresults,linreg=linregresults)
+# Using tidyverse and ggplot to graph the difference in means and linear regression draws
+# Pivot the dataframe to stack all values in one column
+df2 %>% pivot_longer(1:2) %>% 
+  # Call ggplot and color by name
+  ggplot(aes(value,color=name)) + 
+    # Graph density plots of both dif.means and lin.reg
+    geom_density() +
+    geom_vline(xintercept = mean(df2$difmeans),color="red",linetype="dashed") +
+    geom_vline(xintercept = mean(df2$linreg),color="light blue")
+```
+
+(d) Calculate the bias and efficiency of each estimator.  Also calculate the root mean squared error.
+```{r}
+# Calculate SATE from God-mode
+sate2 = mean(dat2$y1 - dat2$y0)
+# Bias of difference in means
+mean(difmeansresults)-sate2
+# Bias in linear regression
+mean(linregresults)-sate2
+# Efficiency of difference in means
+var(difmeansresults)
+# Efficiency of linear regression
+var(linregresults)
+# Root mean squared error difference in means
+sqrt(mean(sate2-difmeansresults)^2)
+# Root mean squared error linear regression
+sqrt(mean(sate2-linregresults)^2)
+```
+
+(e) Why is the estimator that ignores blocks biased?  Is the efficiency meaningful here?  Why did I have you calculate the RMSE?
+An estimator that ignores blocks is biased if the outcomes are conditioned on meaningful blocks. The effect of the treatment is conditional on female distribution and female distribution is not even across the sample. 
+
+(f)  Describe one possible real-life scenario where treatment assignment probabilities and/or treatment effects vary across levels of a covariate.
+In public education, assignment probabilities for, let's say, supplementary English language arts programs, the treatment effects will vary greatly on ELL and LEP students as opposed to those already profiecient in English. In this situation, an analyst would have to take care to separate these blocks, else inaccurately estimate treatment effects.
+
+(g)  How could you use a regression to estimate the treatment effects separately by group?  Calculate estimates for our original sample and treatment assignment (with seed 1234).
+To see separate treatment effects by group, we can introduce interaction terms to the regression. 
+```{r}
+# Let's pull another set of data
+with.int = dgp2.fun()
+reg1 = lm(y~female*treatment,with.int)
+# Estimate for female, treated
+summary(reg1)$coefficient[1]+summary(reg1)$coefficient[2]+summary(reg1)$coefficient[3]+summary(reg1)$coefficient[4]
+# Estimate for male, treated
+summary(reg1)$coefficient[1]+summary(reg1)$coefficient[3]
+# Estimate for female, untreated
+summary(reg1)$coefficient[1]+summary(reg1)$coefficient[2]
+# Estimate for male, untreated
+summary(reg1)$coefficient[1]
+```
+
+
