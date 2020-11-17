@@ -1,6 +1,6 @@
 ---
-title: "The role of propensity scores in observational study"
-author: "Jennifer Hill, Ray Lu, & Zarni Htet"
+title: "HW4 - Propensity Scores"
+author: "Kenny Mai, George Perrett"
 output:
   pdf_document: default
   html_document:
@@ -15,6 +15,19 @@ This assignment will give you the opportunity to practice several different prop
 
 ## R Packages
 You will need to use an R package that you may not already have installed, arm.  
+```{r}
+# Load packages
+# arm is required
+library(arm)
+# ggplot2 for prettier graphs
+library(ggplot2)
+# tidyverse for data manipulation
+library(tidyverse)
+# Hmisc for wtd.var() later
+library(Hmisc)
+# MatchIt for matchit() later
+library(MatchIt)
+```
 
 ## Problem Statement
 In this assignment will use data from a constructed observational study. The data and an associated data dictionary are available in this folder.
@@ -24,24 +37,61 @@ The treatment group for the study that the data are drawn from is the group of c
 #### Question 1: Load the data and choose confounders (Step 1)
 Load the data (you can use the load command since the data are in a .Rdata file) and choose the covariates you want to use as confounders. To make life easier you many want to choose binary indicators of unordered categorical variables (rather than a variable labeled e.g. as 1, 2, 3 for different levels of a categorical variable). 
 
+```{r}
+# Load data from local folder to workspace as hw4
+load("~/R/2012-Causal-Inference/hw4.Rdata")
+```
+
 Create a new data frame for analysis that includes the outcome in the 1st column, the treatment indicator in the 2nd column, and the covariates in the remaining columns. Be thoughtful about your choices with respect to the nature of the covariates (e.g. is an unordered categorical being represented as such) and timing (don't control for post-treatment variables!). Provide your code and a list of the variable names for the confounder variables chosen.
 
 *Also reduce that data frame to include only observations for children whose birthweight is less than 3000 grams.*
+```{r}
+# Subsetting for only children whose birthweight is less than 3000 grams with tidyverse
+df1 <- hw4 %>% filter(bw < 3000) %>% dplyr::select(-momed) %>% dplyr::select(ppvtr.36,treat,everything())
+# Personally choosing all covariates, placing them into a vector
+cov_names0 <- names(df1[3:length(df1)])
+```
 
 #### Question 2: Estimate the propensity score (Step 2)
 Estimate the propensity score. That is, fit a propensity score model and save the predicted scores.
+```{r}
+# Fit GLM model
+glm0 <- glm(treat ~ .-1,
+           family=binomial(), data=df1)
+# Use predict() to generate propensity scores
+pscores0 <- predict(glm0, type="response")
+```
 
 #### Question 3: Restructure your data through matching. [Or at least create the weights variable that will let you to do so in the following steps]  (Step 3)
 
 (a) The first thing you need to be clear on before restructuring your data is the estimand. Given the description above about the research question, what is the estimand of interest?
 
+Estimand of interest is average treatment of the treated.
+
 (b) First please perform *one-to-one nearest neighbor matching with replacement* using your estimated propensity score from Question 2. Perform this matching using the matching command in the arm package. The "cnts" variable in the output reflects the number of times each control observation was used as a match.
+```{r}
+# Use matching() from arm to do propensity score matching
+match0 <- matching(df1$treat,pscores0,replace=TRUE)
+```
 
 #### Question 4: Check overlap and balance. (Step 4)
 
 (a) Examining Overlap. Check overlap on the raw data (that is that data before matching) using some diagnostic plots. Check overlap for the propensity scores as well as two other covariates. Note that it may be necessary to exclude some observations from the plots if they are being obscured in ways similar to the example discussed in class on 10/5.
+```{r}
+# Check overlap of the raw data
+ggplot() +
+  geom_histogram(data = df1, aes(x=pscores0,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+  
+ggplot() +
+  geom_histogram(data = df1, aes(x=momage,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+
+ggplot() +
+  geom_histogram(data = df1, aes(x=bw,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+```
 
 (b) Interpreting Overlap. What do these plots reveal about the overlap required to estimate our estimand of interest?
+
+The plots above show clear areas where there is lack of overlap. This shows some areas of the treatment group lack common support with the control group. Differences in overlap cannot be adjusted through matching, and will limit the coverage of inference.
 
 (c) Examining Balance. You will build your own function to check balance!  This function should take as inputs (at least) the data frame created in Question 1, the vector with the covariate names chosen in Question 1, and the weights created in Question 2. It should output the following:
 
@@ -55,10 +105,74 @@ Estimate the propensity score. That is, fit a propensity score model and save th
 8) Ratio of standard deviations across matched groups (control/treated)
 
 I will provide a "unit test" of this function in a few days so you can help ensure that you are doing the right thing.
+```{r}
+# Name function balfunc, with 4 inputs: data, treatment vector, weight vector, and covariate vector
+balfunc <- function(df,z,weights,cov_names){
+  # Define weight_vec as weights for only controll group
+  weight_vec <- weights[z == 0]
+  # Initialize results list
+  results <- list()
+  # Begin loop through each covariate
+  for (i in 1:length(cov_names)) {
+    # Treated mean for raw data
+    mn1     <- mean(df[z == 1, cov_names[i] ])
+    # Control mean for raw data
+    mn0     <- mean(df[z == 0, cov_names[i] ])
+    # Treated mean for matched data
+    mn1.m   <- mean(df[z == 1, cov_names[i] ])
+    # Control mean for matched data
+    mn0.m   <- weighted.mean(df[z == 0, cov_names[i] ], w = weight_vec)
+    # Control variance for matched data
+    var0.m  <- wtd.var(df[z == 0, cov_names[i] ], weights = weight_vec)
+    # Control variance for raw data
+    var0    <- var(df[z == 0, cov_names[i] ])
+    # Treated variance for raw and matched data
+    var1    <- var(df[z == 1, cov_names[i] ])
+    # Logical for whether or not variable is binary
+    if(length(unique(df[,cov_names[i] ])) > 2){
+      # Difference in means for raw data
+      diff      <- (mn1 - mn0)/sqrt(var1)
+      # Difference in means for matched data
+      diff.m    <- (mn1.m - mn0.m)/sqrt(var1)
+      # Ratio of standard deviations across raw data
+      ratio     <- sqrt(var0/var1)
+      # Ratio of standard deviations across matched data
+      ratio.m   <- sqrt(var0.m/var1)
+    }
+    else {
+      # Difference in means for raw data if binary
+      diff <- (mn1 - mn0)
+      # Difference in means for matched data if binary
+      diff.m <- (mn1.m - mn0.m)
+      # No need for ratios for binary variables
+      ratio <- 0
+      ratio.m <- 0
+    }
+    # Combine results
+     results[[i]] <- c(mn1, mn0, mn1.m, mn0.m, diff, diff.m, ratio, ratio.m)
+  }
+  # Turn results into data frame with new labels
+  results <- data.frame(Reduce(rbind, results))
+  names(results) <- c("mn1", "mn0", "mn1.m", "mn0.m", "diff", "diff.m", "ratio", "ratio.m")
+  rownames(results) <- cov_names
+  # Return data frame
+  return(results)
+}
+```
+
 
 (d) How do you interpret the resulting balance?  In particular what are your concerns with regard to covariates that are not well balanced (3-4 sentences at most).
 
+The larger the absolute values of the difference in means, the greater the imbalance between the control and treatment groups. In particularly, the variables with large imbalances could be indicative of systemic differences between the control and treatment groups. Not adjusting for these differences could cause the resulting interpretation to be biased and result in the ATT to be biased.
+
 (e) Show the results of your balance function on a simple example where the propensity score is fit using logistic regression on bw and b.marr and the matching is performed using 1-1 nearest neighbor matching with replacement.
+```{r}
+w0 <- match0$cnts
+b0 <- round(balfunc(df1,df1$treat,w0,cov_names0),digits = 3)
+b0[c(9,2),]
+```
+
+
 This is the unit test.
 
 \begin{verbatim}
@@ -75,30 +189,193 @@ Ideas for trying something new in Step 2. You could try a new propensity score s
 
 Save your results (weights and balance) for reporting later.
 
+```{r}
+# Choose covariates - keeping all of them again
+cov_names1 <- names(df1[3:length(df1)])
+# Fit GLM model, removed some variables
+glm1 <- glm(treat ~ 
+            momage
+          + b.marr
+          + work.dur
+          + prenatal
+          + cig
+          + booze
+          + sex
+          + first
+          + poly(bw,2)
+          + bwg
+          + poly(preterm,2)
+          + black
+          + hispanic
+          + white
+          + lths
+          + hs
+          + ltcoll
+          + college
+          + dayskidh
+          + income
+           ,family=binomial(), data=df1)
+# Use predict() to generate propensity scores
+pscores1 <- predict(glm1, type="response")
+# Match
+match1 <- matching(df1$treat,pscores1,replace=TRUE)
+w1 = match1$cnts
+# Use balance function again, save results
+b1 = round(balfunc(df1,df1$treat,w1,cov_names1),digits=3)
+b1
+```
+```{r}
+# Check overlap of the raw data
+ggplot() +
+  geom_histogram(data = df1, aes(x=pscores1,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+```
+
+```{r}
+# Choose covariates - keeping all of them again
+cov_names2 <- names(df1[3:length(df1)])
+# Fit GLM model
+glm2 <- glm(treat ~ 
+            momage
+          + b.marr
+          + work.dur
+          + prenatal
+          + cig
+          + booze
+          + sex
+          + first
+          + bw
+          + bwg
+          + preterm
+          + black
+          + hispanic
+          + white
+          + lths
+          + hs
+          + ltcoll
+          + college
+          + dayskidh
+          + income
+           ,family=binomial(), data=df1)
+# Use predict() to generate propensity scores
+pscores2 <- predict(glm2, type="response")
+# Try matching without replacement - probably a bad idea
+match2 <- matching(df1$treat,pscores2,replace=FALSE)
+w2 = match2$cnts
+# Use balance function again, save results
+b2 = round(balfunc(df1,df1$treat,w2,cov_names2),digits=3)
+b2
+```
+```{r}
+# Check overlap of the raw data
+ggplot() +
+  geom_histogram(data = df1, aes(x=pscores2,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+```
+
+```{r}
+# Choose covariates - still keeping all
+cov_names3 <- names(df1[3:length(df1)])
+# Trying something new, using matchit()
+pscores3 <- matchit(treat ~ bw + income + hs + lths + b.marr + work.dur + preterm + dayskidh + sex + hispanic + black + sex:hispanic, data=df1, distance = "GAMlogit", discard = "treat", ratio = 4, replace = T)
+w3 = pscores3$weights
+# Use balance function again, save results
+b3 = round(balfunc(df1,df1$treat,w3,cov_names3),digits=3)
+b3
+```
+
+```{r}
+# Check overlap of the raw data
+ggplot() +
+  geom_histogram(data = df1, aes(x=pscores3$distance,color=as.factor(treat)),fill="white",alpha=0.5,position="identity")
+```
+
 #### Question 6: Repeat steps 2-4, but this time using IPTW.
 Save your results (weights and balance) -- do not display them here. Make sure that you use weights specific to the effect of the treatment on the treated. In this section simply include your code for estimating the pscores and your code for creating the IPTW weights.  
+
+```{r}
+# Choose covariates - keeping all of them again
+cov_names4 <- names(df1[3:length(df1)])
+# Fit GLM model, removed more variables
+glm4 <- glm(treat ~ .-1, family = "binomial", data = df1)
+# Predict for propensity scores
+pscores4 <- predict(glm4, type="response")
+# Inverse for ATT
+iptw <- tibble(pscores = pscores4, treat = df1$treat)
+iptw <- iptw %>% mutate(wgt = if_else(treat==1,1,pscores4/(1-pscores4)))
+w4 <- iptw$wgt
+b4 <- round(balfunc(df1,df1$treat,w4,cov_names0),digits = 3)
+```
 
 #### Question 7: Comparative balance table
 Create a table with columns 6 and 8 from your function for each of the matching and weighting methods performed above. Which approach would you choose and why? (1-2 paragraphs at most)
 
+```{r}
+# Original fitting
+b0[c(6,8)]
+# Method 1: removing st variables, squaring bw and preterm, with replacement
+b1[c(6,8)]
+# Method 2: removing st variables, squaring bw and preterm, without replacement
+b2[c(6,8)]
+# Method 3: using MatchIt
+b3[c(6,8)]
+# IPTW
+b4[c(6,8)]
+```
+
+I would choose the approach using built in GLM, balance and weight data b1 and w1, dropping all st variables and squaring the bw and preterm variables. This approach provides good balance without throwing any one variable completely off balance. This approach is also preferred, as overfitting the model would misrepresent the counterfactual. Also, because of the relatively smaller number of treated vs. control, using the matching WITHOUT replacement would reduce the overall sample size and introduce bias into the estimate.
+
 #### Question 8: Estimate the treatment effect for the restructured datasets implied by Questions 4-6 (Step 5)
 Estimate the effect of the treatment on the treated for each of your five datasets by fitting a regression with weights equal to the number of times each observation appears in the matched sample (that is, use your weights variable from above) or using IPTW weights.
+```{r}
+# Original fitting
+summary(lm(ppvtr.36 ~ ., data = df1, weights = w0))$coefficients[2,]
+# Method 1: removing st variables, squaring bw and preterm, with replacement
+summary(lm(ppvtr.36 ~ ., data = df1, weights = w1))$coefficients[2,]
+# Method 2: removing st variables, squaring bw and preterm, without replacement
+summary(lm(ppvtr.36 ~ ., data = df1, weights = w2))$coefficients[2,]
+# Method 3: using MatchIt
+summary(lm(ppvtr.36 ~ ., data = df1, weights = w3))$coefficients[2,]
+# IPTW
+summary(lm(ppvtr.36 ~ ., data = df1, weights = w4))$coefficients[2,]
+```
 
 #### Question 9: Assumptions
 What assumptions are necessary to interpret the estimates from the propensity score approaches causally?
 
+The primary assumption required for interpreting estimates from propensity score matching is ignoribility. If this assumption is not satisfied, then p-scores will be mispecified and the resulting model will misrepresent the counterfactual. SUFTA also should be satisfied, as spillover effects could effect treatment estimate. 
+
 #### Question 10: Causal Interpretation
 Provide a causal interpretation of *one* of your estimates above.  Remember to specify the counterfactual and to be clear about whom you are making inferences about.  Also make sure to use causal language.
 
+The estimate of the treatment effect on the treated from data created through matching with replacement is a 5.26 point increase. The causal interpretation would be that children who participated in the IHDP intervention had test scores that were, on average, 5.26 points higher than what they would have been had they not participated in the intervention. 
+
+
 #### Question 11: Comparison to linear regression 
-Fit a regression of your outomes to the treatment indicator and covariates.
+Fit a regression of your outcomes to the treatment indicator and covariates.
 (a)  Report your estimate and standard error.
+```{r}
+# Simple linear regression
+round(summary(lm(ppvtr.36 ~ .,data=df1))$coefficient[2,],5)
+```
 (b)  Interpret your results non-causally.
+
+Holding all other covariates constant, a group of children given treatment (enrolled in IHDP) can be expected, on average, have an IQ test score that is 10.03 points higher than a different group of children who were not given treatment.
+
 (c)  Why might we prefer the results from the propensity score approach to the linear regression results in terms of identifying a causal effect?
+
+The propensity score approach considers a counterfactual and allows one to make a statement about the IQ test scores of specific individuals in the data. In contrast, linear regression only allows the comparison of averages across different groups. Propensity scores allow making statements about individuals and what would have happened had they not received treatment. Linear regression forces the comparison of different groups of subjects within the data and does not allow inferences about individuals or their respective counterfactuals.
 
 #### Challenge Question: Improve the standard errors.
 We know the standard errors for the regression in question 11 aren't quite right because they are acting as if the observations are iid. Find a way to fit this regression that appropriate adjusts the standard errors for the weights used.
-
+```{r}
+# GLM function in Survey package should account for the weights used
+library(survey)
+# Creating design with weights in vector w1
+design <- svydesign(ids = ~1, weights = w1, data = df1)
+# Running regression with all variables, using the weights from w1
+reg <- svyglm(ppvtr.36 ~ treat + momage + b.marr + work.dur + prenatal + cig + booze + sex + first + bw + bwg + preterm + black + hispanic + white + lths + hs + ltcoll + college + dayskidh + st5 + st9 + st12 + st25 + st36 + st42 + st48 + st53 + st99 + income, design = design, data = df1)
+# Estimate, std error and p value of the treatment estimate
+summary(reg)$coefficients[2,]
+```
 
 
 
