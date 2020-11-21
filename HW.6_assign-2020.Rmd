@@ -1,0 +1,268 @@
+---
+title: "Regression Discontinuity Simulation Homework"
+author: "Jennifer Hill, Ray Lu & Zarni Htet"
+output:
+  pdf_document: default
+  html_document: default
+---
+## Objective 
+The goal of this exercise is to simulate and analyze data that might have arisen from a policy where eligibility was determined based on one observed measure.  Data from this type of setting are often consistent with the assumptions of the regression discontinuity designs we discussed in class.  
+
+## Setting
+This assignment simulates hypothetical data collected on women who gave birth at any one of several hospitals in disadvantaged neighborhoods in New York City in 2010. We are envisioning a government policy that makes available pre- and post-natal (through 2 years post-birth) health care for pregnant women, new mothers and their children.  This program is only available for women in households with income below $20,000 at the time they gave birth. The general question of interest is whether this program increases a measure of child health at age 3.  You will generate data for a sample of 1000 individuals.
+
+Clean regression discontinuity design.  For this assignment we will make the unrealistic assumption that everyone who is eligible for the program participates and no one participates who is not eligible.  
+
+#### Question 1. God role: simulate income.
+Simulate the "running variable" (sometimes referred to as the "running variable", "assignment variable", or "rating"), income, in units of thousands of dollars.  Call the variable "income". Try to create a distribution that mimics the key features of the data displayed in income_hist.pdf.  Plot your income variable in a histogram with 30 bins.
+
+```{r}
+# Setting seed
+set.seed(0)
+# Using uniform distributions for the two large peaks, then using normal distribution for the perceived smaller peaks throughout the data. Experimented with sd until histogram looked close to the pdf.
+income <- c(runif(220,0,2),
+            runif(70,18,20),
+            rnorm(145,12,10),
+            rnorm(145,16,5),
+            rnorm(270,23,9),
+            rnorm(150,35,8)
+            )
+# Any values less than 0 were set to 0
+income <- ifelse(income<0,0,income)
+# Histogram of simulated data
+hist(income,breaks=30,freq=FALSE,xlab="Income($1000s)",main="Simulated Income Distribution")
+```
+
+#### Question 2. Policy maker role:  Assign eligibility indicator.
+Create an indicator for program eligibility for this sample.  Call this variable "eligible".
+
+```{r}
+eligible <- as.factor(ifelse(income<20,1,0))
+```
+
+#### Question 3:  God role.
+For question 3 you will simulate a health measure what will serve as the outcome. You will simulate data from *two* possible worlds that vary with regard to the relationships between health (outcome) and income (running variable).
+
+## Question 3a
+(a) God role.  Simulate potential outcomes for World A.
+  i) Generate the potential outcomes for health assuming linear models for both E[Y(0) | X] and E[Y(1) | X].  This health measure should have a minimum possible score of 0 and maximum possible score of 30.  The *expected* treatment effect for everyone should be 4 (in other words, E[Y(1) - Y(0) | X] should be 4 at all levels of X).  The residual standard deviation of each  potential outcome should be *1*.
+  
+  ii) Save two datasets:  (1) fullA should have the running variable and both potential outcomes and (2) obsA should have the running variable, the eligibility variable, and the observed outcome.
+  
+```{r}
+# Setting seed for the chunk
+set.seed(0)
+# Initialize the data frame
+fullA <- data.frame(income=income,y0=NA,y1=NA)
+# y0 depends on income and is linear, y0 can't be greater than 26 and can't be lower than 0. With sd=1, we'll generate y0 to be less than or equal to 25 at the most
+# max(income) = 63.4, so to be safe we'll assume the biggest simulated value is 100. 25/100 = 0.25. After some simulating, intercept y = 5 used to make sure values are within bounds.
+fullA$y0 <- 5 + 0.25*income + rnorm(1000,0,1)
+summary(fullA$y0)
+
+fullA$y1 <- fullA$y0 + rnorm(1000,4,1)
+summary(fullA$y1)
+
+# Check difference in means
+mean(fullA$y1-fullA$y0)
+
+# Create obsA
+obsA <- data.frame(income=income,eligible=eligible,y=ifelse(eligible==1,fullA$y1,fullA$y0))
+```
+
+## Question 3b 
+(b)  Simulate potential outcomes for World B.
+  i) Generate the potential outcomes for health assuming a linear model
+for E[Y(0) | X] and a quadratic model for E[Y(1) | X].  The treatment
+effect at the threshold (the level of X that determines eligibility) should be 4.  The residual standard deviation of each potential outcome should be *1*.  This health measure should have a minimum possible score of 0 and maximum possible score of 100. Creating this DGP may be facilitated by using a transformed version of your income variable that subtracts out the threshold value.
+  ii) Save two datasets:  (1) fullB should have the running variable and both potential outcomes and (2) obsB should have the running variable, the eligibility variable, and the observed outcome.
+  
+```{r}
+# Set seed for chunk
+set.seed(0)
+# Initialize new data frame for world B
+fullB <- data.frame(income=income,y0=NA,y1=NA)
+# Transform income subtracting the threshold value, 20
+t.income <- income - 20
+
+# Generate new y0s in this world, should be linear. Using mostly the same model as the world A, but using y = 15 instead of y = 5 to make sure it's in bounds.
+fullB$y0 <- 15 + 0.25*t.income + rnorm(1000,0,1)
+summary(fullB$y0)
+
+# Generating y1s, logic for t.income means that if income was below 20, (now it's anything less than 2 because of the uniform distribution in Question 1), they weren't eligible, so their potential outcome is still linear, with treatment effect of 4. Otherwise, it becomes a new quadratic relationship. Kept tweaking the coefficient for the quadratic until the range fell between 0 and 100
+fullB$y1 <- ifelse(t.income < 2,fullB$y0 + rnorm(1,4,1),0.07*t.income^2 + rnorm(1,15,1))
+summary(fullB$y1)
+
+# Create obsB
+obsB <- data.frame(income=income,eligible=eligible,y=ifelse(eligible==1,fullB$y1,fullB$y0))
+```
+  
+#### Question 4.  Researcher role. Plot your data!
+Make two scatter plots of income (x-axis) versus observed health (y-axis), one corresponding to each world.  In each, plot eligible participants in red and non-eligible participants in blue.
+
+```{r}
+# Call ggplot2
+library(ggplot2)
+# Plot world A
+ggplot(data=obsA) +
+  ggtitle("Income vs Observed Health in World A") +
+  xlab("Income($1000s)") +
+  ylab("Observed Health") +
+  xlim(0,50) +
+  ylim(0,25) +
+  geom_point(aes(x=income,y=y,color=eligible)) +
+  scale_color_manual(values=c("blue","red"))
+# Plot world B
+ggplot(data=obsB) +
+  ggtitle("Income vs Observed Health in World B") +
+  xlab("Income($1000s)") +
+  ylab("Observed Health") +
+  xlim(0,50) +
+  ylim(0,25) +
+  geom_point(aes(x=income,y=y,color=eligible)) +
+  scale_color_manual(values=c("blue","red"))
+```
+
+#### Question 5.  Researcher role.  Estimate the treatment effect for World A and World B using all the data.
+Now we will estimate effects in a number of different ways.  Each model should include reported income and eligible as predictors.  In each case use the model fit to report the estimate of the effect of the program at the threshold level of income.  All models in Question 5 will be fit to all the data.
+
+## Question 5a: Researcher role.  Estimates for World A using all the data.
+(a) *Using all the data from World A,* perform the following analyses. 
+  (i) Fit a linear model.  Do not include an interaction.
+  (ii) Fit a linear model and include an interaction between income and eligible.
+  (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between treatment and control groups.
+  
+```{r}
+fitA1 <- lm(y ~ income + eligible,obsA)
+round(summary(fitA1)$coefficients,4)
+predA1 <- predict(fitA1,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA1 <- predA1[2]-predA1[1]
+estA1
+
+fitA2 <- lm(y ~ eligible * income,obsA)
+round(summary(fitA2)$coefficients,4)
+predA2 <- predict(fitA2,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA2 <- predA2[2]-predA2[1]
+estA2
+
+fitA3 <- lm(y ~ eligible * income * I(income^2),obsA)
+round(summary(fitA3)$coefficients,4)
+predA3 <- predict(fitA3,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA3 <- predA3[2]-predA3[1]
+estA3
+```
+
+## Question 5b: Researcher role.  Estimates for World B using all the data.
+(b) *Using all the data from World B,* perform the following analyses. 
+  (i) Fit a linear model.  Do not include an interaction.
+  (ii) Fit a linear model and include an interaction between income and eligible.
+  (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between the treatment and control groups).
+  
+```{r}
+fitB1 <- lm(y ~ income + eligible,obsB)
+round(summary(fitB1)$coefficients,4)
+predB1 <- predict(fitB1,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB1 <- predB1[2]-predB1[1]
+estB1
+
+fitB2 <- lm(y ~ eligible * income,obsB)
+round(summary(fitB2)$coefficients,4)
+predB2 <- predict(fitB2,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB2 <- predB2[2]-predB2[1]
+estB2
+
+fitB3 <- lm(y ~ eligible * income * I(income^2),obsB)
+round(summary(fitB3)$coefficients,4)
+predB3 <- predict(fitB3,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB3 <- predB3[2]-predB3[1]
+estB3
+```
+  
+#### Question 6.  Researcher role.  Estimate the treatment effect for World A and World B using data close to the threshold.
+We will again estimate effects in a number of different ways.  Each model should include "income" and "eligible" as predictors.  In each case use the model fit to report the estimate of the effect of the program at the threshold level of income.  All models in Question 6 will be fit only to women with incomes ranging from $18,000 to $22,000.
+
+## Question 6a: Researcher role.  Estimates for World A using the restricted data.
+(a) Using the restricted data (for participants with incomes between $18K and $22K) from World A, perform the following analyses. 
+  (i) Fit a linear model to the restricted dataset.  Do not include an interaction.
+  (ii) Fit a linear model to the restricted dataset, include an interaction between income and eligible.
+  (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between the treatment and control groups).
+  
+```{r}
+restrict <- (income <= 22 & income >=18)
+fitA1r <- lm(y ~ income + eligible,obsA,subset=restrict)
+round(summary(fitA1r)$coefficients,4)
+predA1r <- predict(fitA1r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA1r <- predA1r[2]-predA1r[1]
+estA1r
+
+fitA2r <- lm(y ~ eligible * income,obsA,subset=restrict)
+round(summary(fitA2r)$coefficients,4)
+predA2r <- predict(fitA2r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA2r <- predA2r[2]-predA2r[1]
+estA2r
+
+fitA3r <- lm(y ~ eligible * income * I(income^2),obsA,subset=restrict)
+round(summary(fitA3r)$coefficients,4)
+predA3r <- predict(fitA3r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estA3r <- predA3r[2]-predA3r[1]
+estA3r
+```
+
+## Question 6b: Researcher role.  Estimates for World B using the restricted data.
+(b) Using the restricted data (for participants with incomes between $18K and $22K) from World B, perform the following analyses.  
+  (i) Fit a linear model to the restricted dataset.  Do not include an interaction.
+  (ii) Fit a linear model to the restricted dataset, include an interaction between income and eligible.
+  (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between treatment and control groups.
+
+```{r}
+fitB1r <- lm(y ~ income + eligible,obsB,subset=restrict)
+round(summary(fitA1r)$coefficients,4)
+predB1r <- predict(fitB1r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB1r <- predB1r[2]-predB1r[1]
+estB1r
+
+fitB2r <- lm(y ~ eligible * income,obsB,subset=restrict)
+round(summary(fitB2r)$coefficients,4)
+predB2r <- predict(fitB2r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB2r <- predB2r[2]-predB2r[1]
+estB2r
+
+fitB3r <- lm(y ~ eligible * income * I(income^2),obsB,subset=restrict)
+round(summary(fitB3r)$coefficients,4)
+predB3r <- predict(fitB3r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
+estB3r <- predB3r[2]-predB3r[1]
+estB3r
+```
+
+#### Question 7.  Researcher role.  Displaying your estimates.  
+Present your estimates from questions 5 and 6 into one or two tables or figures, clearly noting which world the data are from, which models the estimates are from, and which analysis sample was used.
+
+```{r}
+sim.results <-
+data.frame(
+  world=c(rep("A",3),rep("B",3),rep("A",3),rep("B",3)),
+  model=c(rep(c("income, eligible","income, eligible, interaction","income, eligible, interaction, income squared"),4)),
+  sample=c(rep("full sample",6),rep("18k < income < 22k",6)),
+  estimate=c(estA1,estA2,estA3,estB1,estB2,estB3,estA1r,estA2r,estA3r,estB1r,estB2r,estB3r)
+  )
+sim.results
+```
+
+#### Question 8.  Researcher role.  Thinking about the data.
+ (a) A colleague now points out to you that some women may have incentives in these settings to misreport their actual income. Plot a histogram of reported income (using the default settings which should give you 33 bins) and look for anything that might support such a claim. What assumption is called into question if women are truly misreporting in this manner?
+
+ (b) Another colleague points out to you that several other government programs (including food stamps and Headstart) have the same income threshold for eligibility. How might this knowledge impact your interpretation of your results?
+
+#### Question 9.  Researcher role.  Thinking about the assumptions?
+What are the three most important assumptions for the causal estimates in questions 5 and 6?
+
+#### Question 10.
+Provide a causal interpretation of your estimate in Question 6biii.
+
+#### Question 11
+Use the rdrobust package in R to plot your data and choose an optimal bandwidth for the data in World B. 
+
+(a) First create two plots using the rdplot command.  In the first you use a linear model (that is, use p=1) and in the second allow for a quadratic term (that is, use p=2).  
+
+(b) Now use the rdrobust command to fit an RDD models to your data.  Again try both a linear and a quadratic fit.  For the bandwidth selection method use "msetwo". [Use the conventional version of estimates.  Don't use the "bias corrected"" versions of things.] Compare the points estimates and bandwidths across these approaches. **Extra credit of four points in this question if you also run these commands with a different bandwidth selection method and compare the estimands and the bandwidth endpoints.**
+
+
