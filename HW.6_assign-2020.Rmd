@@ -20,8 +20,8 @@ Simulate the "running variable" (sometimes referred to as the "running variable"
 # Setting seed
 set.seed(0)
 # Using uniform distributions for the two large peaks, then using normal distribution for the perceived smaller peaks throughout the data. Experimented with sd until histogram looked close to the pdf.
-income <- c(runif(220,0,2),
-            runif(70,18,20),
+income <- c(runif(220,0,1),
+            runif(70,19,20),
             rnorm(145,12,10),
             rnorm(145,16,5),
             rnorm(270,23,9),
@@ -88,8 +88,8 @@ t.income <- income - 20
 fullB$y0 <- 15 + 0.25*t.income + rnorm(1000,0,1)
 summary(fullB$y0)
 
-# Generating y1s, logic for t.income means that if income was below 20, (now it's anything less than 2 because of the uniform distribution in Question 1), they weren't eligible, so their potential outcome is still linear, with treatment effect of 4. Otherwise, it becomes a new quadratic relationship. Kept tweaking the coefficient for the quadratic until the range fell between 0 and 100
-fullB$y1 <- ifelse(t.income < 2,fullB$y0 + rnorm(1,4,1),0.07*t.income^2 + rnorm(1,15,1))
+# Generating y1s, logic for t.income means that if income was below 20, (now it's anything less than 0 because of the uniform distribution in Question 1), they weren't eligible, so their potential outcome is still linear, with treatment effect of 4. Otherwise, it becomes a new quadratic relationship. Kept tweaking the coefficient for the quadratic until the range fell between 0 and 100
+fullB$y1 <- ifelse(t.income < 0,fullB$y0 + rnorm(1000,4,1),0.07*t.income^2 + rnorm(1000,15,1))
 summary(fullB$y1)
 
 # Create obsB
@@ -132,6 +132,7 @@ Now we will estimate effects in a number of different ways.  Each model should i
   (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between treatment and control groups.
   
 ```{r}
+# For each model, fit estimate with predict, then calculate the treatment effect. Note the extra argument in predict to tell the function the where the cutoff is and for what factor.
 fitA1 <- lm(y ~ income + eligible,obsA)
 round(summary(fitA1)$coefficients,4)
 predA1 <- predict(fitA1,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
@@ -158,6 +159,7 @@ estA3
   (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between the treatment and control groups).
   
 ```{r}
+# For each model, fit estimate with predict, then calculate the treatment effect. Note the extra argument in predict to tell the function the where the cutoff is and for what factor.
 fitB1 <- lm(y ~ income + eligible,obsB)
 round(summary(fitB1)$coefficients,4)
 predB1 <- predict(fitB1,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
@@ -187,6 +189,7 @@ We will again estimate effects in a number of different ways.  Each model should
   (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between the treatment and control groups).
   
 ```{r}
+# For each model, fit estimate with predict, then calculate the treatment effect. Note the extra argument in predict to tell the function the where the cutoff is and for what factor. Extra subset argument in lm() for restriction range.
 restrict <- (income <= 22 & income >=18)
 fitA1r <- lm(y ~ income + eligible,obsA,subset=restrict)
 round(summary(fitA1r)$coefficients,4)
@@ -214,6 +217,7 @@ estA3r
   (iii) Fit a model that is quadratic in income and includes an interaction between both income terms and eligible (that is -- allow the shape of the relationship to vary between treatment and control groups.
 
 ```{r}
+# For each model, fit estimate with predict, then calculate the treatment effect. Note the extra argument in predict to tell the function the where the cutoff is and for what factor. Extra subset argument in lm() for restriction range.
 fitB1r <- lm(y ~ income + eligible,obsB,subset=restrict)
 round(summary(fitA1r)$coefficients,4)
 predB1r <- predict(fitB1r,data.frame(income=c(20,20),eligible=as.factor(c(0,1))))
@@ -249,20 +253,85 @@ sim.results
 
 #### Question 8.  Researcher role.  Thinking about the data.
  (a) A colleague now points out to you that some women may have incentives in these settings to misreport their actual income. Plot a histogram of reported income (using the default settings which should give you 33 bins) and look for anything that might support such a claim. What assumption is called into question if women are truly misreporting in this manner?
+ 
+```{r}
+# Setting seed
+set.seed(0)
+# Using uniform distributions for the two large peaks, then using normal distribution for the perceived smaller peaks throughout the data. Experimented with sd until histogram looked close to the pdf.
+income <- c(runif(220,0,1),
+            runif(70,20,20),
+            rnorm(145,12,10),
+            rnorm(145,16,5),
+            rnorm(270,23,9),
+            rnorm(150,35,8)
+            )
+# Any values less than 0 were set to 0
+income <- ifelse(income<0,0,income)
+# Histogram of simulated data
+par(mfrow = c(1, 2))
+hist(income,breaks=30,freq=FALSE,xlab="Income($1000s)",main="Simulated Income Distribution")
+hist(income,breaks=60,freq=FALSE,xlab="Income($1000s)",main="Simulated Income Distribution")
+```
+This calls into question the monotonicity assumption. Women are defying the assignment mechanism by under-reporting their income just enough to qualify for treatment assignment.
 
  (b) Another colleague points out to you that several other government programs (including food stamps and Headstart) have the same income threshold for eligibility. How might this knowledge impact your interpretation of your results?
+
+This impacts the ignoribility assumption, as the same women may qualify for other government programs with the same income threshold, resulting in confounding effects. 
 
 #### Question 9.  Researcher role.  Thinking about the assumptions?
 What are the three most important assumptions for the causal estimates in questions 5 and 6?
 
+Ignoribility, monotonicity, and probability of the assignemnt mechanism is related to the probability of receiving treatment.
+
 #### Question 10.
 Provide a causal interpretation of your estimate in Question 6biii.
+
+For women who report incomes between 18k and 22k, the treatment effect of program on the health measure is a 3.6 point increase if they were given treatment compared to had they not been given treatment.
 
 #### Question 11
 Use the rdrobust package in R to plot your data and choose an optimal bandwidth for the data in World B. 
 
 (a) First create two plots using the rdplot command.  In the first you use a linear model (that is, use p=1) and in the second allow for a quadratic term (that is, use p=2).  
 
+```{r}
+# Loading rdrobust
+library(rdrobust)
+# Specifying cutoff at 20 and p=1 and 2 for linear and quadratic, respectively.
+rdplot(y=obsB$y,x=obsB$income,c=20,p=1)
+rdplot(y=obsB$y,x=obsB$income,c=20,p=2)
+```
+
 (b) Now use the rdrobust command to fit an RDD models to your data.  Again try both a linear and a quadratic fit.  For the bandwidth selection method use "msetwo". [Use the conventional version of estimates.  Don't use the "bias corrected"" versions of things.] Compare the points estimates and bandwidths across these approaches. **Extra credit of four points in this question if you also run these commands with a different bandwidth selection method and compare the estimands and the bandwidth endpoints.**
+
+```{r}
+# Calling rdrobust model fit to linear model and quadratic model, respectively.
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=1,bwselect="msetwo"))
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=2,bwselect="msetwo"))
+```
+The point estimates for both linear and quadratic are close, but the standard error for the quadratic is greater than the standard error for the linear model, 0.35 versus 0.25. In addition, the bandwidth of the linear is between 6 and 7, whereas the bandwidth for the quadratic is between 6.7 and 10.3. This makes sense given that in a linear fit, fewer points are needed to sufficiently fit a representative model to the data than compared to a quadratic model.
+
+```{r}
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=1,bwselect="mserd"))
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=2,bwselect="mserd"))
+```
+```{r}
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=1,bwselect="msesum"))
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=2,bwselect="msesum"))
+```
+
+```{r}
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=1,bwselect="msecomb1"))
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=2,bwselect="msecomb1"))
+```
+```{r}
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=1,bwselect="cerrd"))
+summary(rdrobust(y=obsB$y,x=obsB$income,c=20,p=2,bwselect="cerrd"))
+```
+The other methods of bandwidth selection strangely end up with single points as bandwidths. Not sure why. I tried.
+
+
+
+
+
 
 
